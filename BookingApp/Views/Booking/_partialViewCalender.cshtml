@@ -1,0 +1,465 @@
+﻿@model CalenderVM
+
+@{
+    var room = ViewData["room"];
+}
+
+<style>
+    /* Add a custom style for the calendar container */
+    #calendar-@Model.RoomId {
+        max-width: 800px; /* Set the maximum width if needed */
+        margin: 0 auto; /* Center the calendar horizontally */
+        height: 500px; /* Set the desired height */
+    }
+
+    /* Add some space between the calendar and the form */
+    form {
+        margin-top: 20px;
+    }
+</style>
+
+@if (Model != null)
+{
+    <h1 style="text-align:center">@room</h1>
+    <div id="calendar-@Model.RoomId"></div>
+}
+
+<div class="modal fade" id="eventModal" tabindex="-1" role="dialog" aria-labelledby="eventModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="eventModalLabel">Event Information</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body" id="eventModalBody">
+                <!-- Event information will be displayed here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Need to set variable from here to check user role and later pass to javascript
+*@
+ 
+@{
+    bool isAdmin = User.IsInRole("Admin");
+    string user = User.Identity.Name;
+}
+
+
+<script>
+    console.log('Initializing FullCalendar for Room @Model.RoomId');
+    document.addEventListener('DOMContentLoaded', function () {
+        var selectedDate = null; // Variable to store the selected date
+        var selectedEventId = null; // Variable to store the selected event ID
+        var isAdmin = @Html.Raw(Json.Serialize(isAdmin));
+        var user = @Html.Raw(Json.Serialize(user));
+
+        var calendarEl = document.getElementById('calendar-@Model.RoomId');
+        var calendar = new FullCalendar.Calendar(calendarEl, {
+            events: function (fetchInfo, successCallback, failureCallback) {
+                // Make an AJAX request to get booked events for the current time range
+                $.ajax({
+                    url: '/GetEvents/' + @Model.RoomId,
+                    method: 'GET',
+                    data: {
+                        start: fetchInfo.startStr, // This fetches booking from first of the month until the last of the month
+                        end: fetchInfo.endStr
+                    },
+                    success: function (bookedEvents) {
+                        // Use bookedEvents to generate events array
+                        var events = bookedEvents.map(function (bookedEvent) {
+                            return {
+                                id: bookedEvent.id,
+                                topic: bookedEvent.topic, // Use the event name as the title
+                                start: bookedEvent.start,
+                                end: bookedEvent.end,
+                                info: bookedEvent.info,
+                                fromTime: bookedEvent.fromTime,
+                                toTime: bookedEvent.toTime,
+                                status: bookedEvent.status, // Include event status in the event object
+                                bookingType: bookedEvent.bookingType,
+                                serialId: bookedEvent.serialId,
+                                user: bookedEvent.user
+                            };
+                        });
+
+                        successCallback(events);
+                    },
+                    error: function (error) {
+                        console.error('Error fetching booked events:', error);
+                        failureCallback(error);
+                    }
+                });
+            },
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth'
+            },
+            editable: false,
+            selectable: true,
+            selectHelper: true,
+            eventClick: function (info) {
+
+                // Populate modal content with event information
+                var modalBody = document.getElementById('eventModalBody');
+                var statusBadge = '';
+
+                switch (info.event.extendedProps.status) {
+                    case 'Pending':
+                        statusBadge = '<span class="badge badge-warning">Väntar på bekräftelse</span>';
+                        break;
+                    case 'Confirmed':
+                        statusBadge = '<span class="badge badge-success">Bekräftad</span>';
+                        break;
+                    // Add more cases for other statuses if needed
+
+                    default:
+                        // Default case, no badge for unknown status
+                        statusBadge = '';
+                        break;
+                }
+
+                // Check if the user is an admin to display the delete button
+                var deleteButton = isAdmin ? '<button type="button" class="btn btn-danger" id="deleteEventBtn">Radera Event</button>' : '';
+                var deleteSerialButton = isAdmin ? '<button type="button" class="btn btn-danger" id="deleteSerialEventBtn">Radera Serie</button>' : '';
+                modalBody.innerHTML = `
+                    <p><strong>Rubrik:</strong> ${info.event.extendedProps.topic}</p>
+                    <p><strong>Info:</strong> ${info.event.extendedProps.info}</p>
+                    <p><strong>Tid:</strong> ${info.event.extendedProps.fromTime} - ${info.event.extendedProps.toTime}</p>
+                    <p><strong>Bokad av:</strong> ${info.event.extendedProps.user}</p>
+                    <p><strong>Status:</strong> ${statusBadge}</p>
+                    ${deleteButton} ${deleteSerialButton}
+                `;
+
+                selectedEventId = info.event.id;
+
+                // Show the modal
+                $('#eventModal').modal('show');
+
+                $('#deleteEventBtn').click(function () {
+                    // Make an AJAX request to delete the event
+                    $.ajax({
+                        url: '/DeleteEvent/' + selectedEventId,
+                        method: 'DELETE',
+                        success: function (response) {
+                            if (response.success) {
+                                alert('Event har raderats');
+                                console.log('Event deleted successfully');
+
+                                $('#eventModal').modal('hide');
+                                // Refresh the calendar if needed
+                                calendar.refetchEvents();
+                            } else {
+                                console.error(response.error);
+                                alert('Misslyckades att radera event');
+                            }
+                        },
+                        error: function (xhr, status, error) {
+                            console.error('Failed to delete event:', error);
+                            console.log('Server response:', xhr.responseText);
+                        }
+                    });
+                });
+
+                $('#deleteSerialEventBtn').click(function () {
+                    // Make an AJAX request to delete the event
+                    $.ajax({
+                        url: '/DeleteSerialEvent/' + info.event.extendedProps.serialId,
+                        method: 'DELETE',
+                        success: function (response) {
+                            if (response.success) {
+                                alert('Serie har raderats');
+                                console.log('Event deleted successfully');
+
+                                $('#eventModal').modal('hide');
+                                // Refresh the calendar if needed
+                                calendar.refetchEvents();
+                            } else {
+                                console.error(response.error);
+                                alert('Misslyckades att radera serie');
+                            }
+                        },
+                        error: function (xhr, status, error) {
+                            console.error('Failed to delete event:', error);
+                            console.log('Server response:', xhr.responseText);
+                        }
+                    });
+                });
+            },
+            select: function (info) {
+                // Handle date selection
+                selectedDate = info.startStr;
+
+                // Update the hidden input value with the selected date
+                $('#selectedDate').val(selectedDate);
+                $('#formSelectedDate').val(selectedDate);
+
+                var dayMapping = {
+                   0: 'Sunday',
+                   1: 'Monday',
+                   2: 'Tuesday',
+                   3: 'Wednesday',
+                   4: 'Thursday',
+                   5: 'Friday',
+                   6: 'Saturday'
+                 };
+
+                var dayOfWeek = new Date(selectedDate).getDay();
+                $('#dayOfWeek').val(dayMapping[dayOfWeek]);
+            },
+            eventDisplay: 'block', // Show only the title without the time
+            eventContent: function (arg) {
+                // Customize event rendering
+                var backgroundColor = arg.event.extendedProps.status === 'Pending' ? 'dodgerblue' : 'green';
+                return {
+                  html: `<div class="fc-title" style="background-color: ${backgroundColor}; display: flex; flex-direction: column;">
+                            <span style="font-size: 10px;">${arg.event.extendedProps.topic}</span>
+                            <span style="font-size: 10px;">[${arg.event.extendedProps.user}]</span>
+                        </div>`,
+    display: 'block'
+                };
+            },
+            windowResize: false,
+            timeZone: 'Europe/Stockholm' // Set the time zone to Swedish time
+        });
+
+        calendar.render();
+
+
+         $(document).ready(function () {
+            $('#bookingType').change(function () {
+                var selectedValue = $(this).val();
+                if (selectedValue === 'Serie') {
+                    $('#serieFields').show();
+                } else {
+                    $('#serieFields').hide();
+                }
+            });
+        });
+
+        // Handle form submission for booking
+        $('#bookEventBtn').click(function () {
+
+            if (!selectedDate) {
+                alert('Var god och välj ett datum');
+                return;
+            }
+
+            if ($('#topic').val() === '') {
+                alert('Var god och fyll i rubrik');
+                return;
+            }
+
+            if ($('#eventInfo').val() === '') {
+                alert('Var god och fyll i information');
+                return;
+            }
+
+            if ($('#fromTime').val() === $('#toTime').val()) {
+                alert('Bokad tid måste vara mer än 0 minuter');
+                return;
+            }
+
+            var fromTimeValue = $('#fromTime').val();
+            var toTimeValue = $('#toTime').val();
+
+            // Split the time values into hours and minutes
+            var fromTimeParts = fromTimeValue.split(':');
+            var toTimeParts = toTimeValue.split(':');
+
+            // Create Date objects with a common date for comparison (e.g., today's date)
+            var fromDate = new Date(0, 0, 0, fromTimeParts[0], fromTimeParts[1]); // Hours and minutes from "from time"
+            var toDate = new Date(0, 0, 0, toTimeParts[0], toTimeParts[1]); // Hours and minutes from "to time"
+
+            // Compare the Date objects to check if "from time" is greater than "to time"
+            if (fromDate >= toDate) {
+                alert('"Från tid" får inte vara lika med eller mer än "Till tid"');
+                return;
+            }
+
+            var eventData = {
+                selectedDate: selectedDate,
+                fromTime: $('#fromTime').val(),
+                toTime: $('#toTime').val(),
+                topic: $('#topic').val(),
+                eventInfo: $('#eventInfo').val(),
+                bookingType: $('#bookingType').val(),
+                dayOfWeek: $('#dayOfWeek').val(),
+                timeSpan: $('#timeSpan').val(),
+                timeQuantity: $('#timeQuantity').val(),
+                roomId: @Model.RoomId,
+                isAdmin: isAdmin,
+                user: user
+            };
+            // Make an AJAX request to book the event
+            $.ajax({
+                url: '/BookEvent',
+                method: 'POST',
+                data: eventData,
+                success: function (response) {
+                    if (response.success) {
+                        $('#centerText').text('Bokingsförfrågan lyckades');
+                        $('#centerText').css('color', 'green');
+                        // Close the modal if needed
+                        $('#eventModal').modal('hide');
+                        // Refresh the calendar if needed
+                        calendar.refetchEvents();
+                    } else {
+                        console.error(response.error);
+                        $('#centerText').text(response.error);
+                        $('#centerText').css('color', 'red');
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.error('Failed to add event:', error);
+                    console.log('Server response:', xhr.responseText);
+                    $('#centerText').text('Bokningsförfrågan misslyckades');
+                    $('#centerText').css('color', 'red');
+                }
+            });
+        });
+    });
+</script>
+
+<div class="booking-form mt-4">
+     <label for="formSelectedDate">Datum</label>
+    <input type="button" class="form-control" id="formSelectedDate" style="text-align: left" />
+
+    <div class="row">
+        <div class="col-md-6">
+            <label for="fromTime">Från</label>
+            <select class="form-control" id="fromTime" required>
+                <option value="07:00">07:00</option>
+                <option value="07:30">07:30</option>
+                <option value="08:00">08:00</option>
+                <option value="08:30">08:30</option>
+                <option value="09:00">09:00</option>
+                <option value="09:30">09:30</option>
+                <option value="10:00">10:00</option>
+                <option value="10:30">10:30</option>
+                <option value="11:00">11:00</option>
+                <option value="11:30">11:30</option>
+                <option value="12:00">12:00</option>
+                <option value="12:30">12:30</option>
+                <option value="13:00">13:00</option>
+                <option value="13:30">13:30</option>
+                <option value="14:00">14:00</option>
+                <option value="14:30">14:30</option>
+                <option value="15:00">15:00</option>
+                <option value="15:30">15:30</option>
+                <option value="16:00">16:00</option>
+                <option value="16:30">16:30</option>
+                <option value="17:00">17:00</option>
+                <option value="17:30">17:30</option>
+                <option value="18:00">18:00</option>
+                <option value="18:30">18:30</option>
+                <option value="19:00">19:00</option>
+                <option value="19:30">19:30</option>
+                <option value="20:00">20:00</option>
+                <option value="20:30">20:30</option>
+                <option value="21:00">21:00</option>
+                <option value="21:30">21:30</option>
+                <option value="22:00">22:00</option>
+                <option value="22:30">22:30</option>
+                <option value="23:00">23:00</option>
+                <option value="23:30">23:30</option>
+                <option value="24:00">24:00</option>
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label for="toTime">Till</label>
+            <select class="form-control" id="toTime" required>
+                <option value="07:00">07:00</option>
+                <option value="07:30">07:30</option>
+                <option value="08:00">08:00</option>
+                <option value="08:30">08:30</option>
+                <option value="09:00">09:00</option>
+                <option value="09:30">09:30</option>
+                <option value="10:00">10:00</option>
+                <option value="10:30">10:30</option>
+                <option value="11:00">11:00</option>
+                <option value="11:30">11:30</option>
+                <option value="12:00">12:00</option>
+                <option value="12:30">12:30</option>
+                <option value="13:00">13:00</option>
+                <option value="13:30">13:30</option>
+                <option value="14:00">14:00</option>
+                <option value="14:30">14:30</option>
+                <option value="15:00">15:00</option>
+                <option value="15:30">15:30</option>
+                <option value="16:00">16:00</option>
+                <option value="16:30">16:30</option>
+                <option value="17:00">17:00</option>
+                <option value="17:30">17:30</option>
+                <option value="18:00">18:00</option>
+                <option value="18:30">18:30</option>
+                <option value="19:00">19:00</option>
+                <option value="19:30">19:30</option>
+                <option value="20:00">20:00</option>
+                <option value="20:30">20:30</option>
+                <option value="21:00">21:00</option>
+                <option value="21:30">21:30</option>
+                <option value="22:00">22:00</option>
+                <option value="22:30">22:30</option>
+                <option value="23:00">23:00</option>
+                <option value="23:30">23:30</option>
+                <option value="24:00">24:00</option>
+            </select>
+         </div>
+    </div>
+    
+    <label for="topic">Rubrik</label>
+    <input type="text" class="form-control" id="topic" required />
+
+    <label for="eventInfo">Information:</label>
+    <textarea class="form-control" id="eventInfo" required></textarea>
+
+    <label>Bokningstyp:</label>
+    <select class="form-control" id="bookingType" required>
+        <option value="Standard">Standard</option>
+        <option value="Serie">Serie</option>
+    </select>
+
+    <div id="serieFields" style="display: none;">
+        <label>Dag</label>
+        <select class="form-control" id="dayOfWeek" required>
+            <option value="Monday">Måndag</option>
+            <option value="Tuesday">Tisdag</option>
+            <option value="Wednesday">Onsdag</option>
+            <option value="Thursday">Torsdag</option>
+            <option value="Friday">Fredag</option>
+            <option value="Saturday">Lördag</option>
+            <option value="Sunday">Söndag</option>
+            <option value="EveryDay">Varje dag</option>
+        </select>
+
+        <div class="row">
+            <div class="col-md-6">
+                <label>Tidspann</label>
+                <select class="form-control" id="timeSpan" required>
+                    <option value="Months">Månader</option>
+                    <option value="Weeks">Veckor</option>
+                </select>
+            </div>
+             <div class="col-md-6">
+                <label>Antal</label>
+                <select class="form-control" id="timeQuantity" required>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    <br />
+    <button type="button" id="bookEventBtn" class="btn btn-primary">Skicka förfrågan</button>
+</div>
+
+<div id="centerText" style="text-align: center;"></div>

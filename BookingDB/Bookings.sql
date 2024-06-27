@@ -1,0 +1,7 @@
+﻿CREATE TABLE [dbo].[Bookings]
+(
+	[Id] INT NOT NULL PRIMARY KEY, 
+    [Name] NVARCHAR(MAX) NOT NULL, 
+    [Time] DATETIME NOT NULL, 
+    [Info] NVARCHAR(MAX) NOT NULL
+)

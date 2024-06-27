@@ -1,0 +1,49 @@
+﻿@model List<Booking>
+
+@{
+    var rooms = ViewData["Rooms"] as Dictionary<string, string>;
+}
+
+<h1>Bokningsförfrågningar</h1>
+
+@if (Model.Count == 0)
+{
+    <p>Inga bokningsförfrågningar</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Rubrik</th>
+                <th>Info</th>
+                <th>Tid</th>
+                <th>Datum</th>
+                <th>Rum</th>
+                <th>Status</th>
+                <th>Bokningstyp</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var booking in Model)
+            {
+                <tr>
+                    <td>@booking.Topic</td>
+                    <td>@booking.Info</td>
+                    <td>@booking.FromTime - @booking.ToTime</td>
+                    <td>@booking.Date</td>
+                    <td>@rooms["Room" + booking.Room]</td>
+                    <td>@booking.Status</td>
+                    <td>@booking.BookingType</td>
+                    <td>
+                        <form method="post" asp-action="ConfirmBooking">
+                            <input type="hidden" name="bookingId" value="@booking.Id" />
+                            <input type="hidden" name="serialId" value="@booking.SerialId" />
+                            <button type="submit" class="btn btn-success">Bekräfta</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

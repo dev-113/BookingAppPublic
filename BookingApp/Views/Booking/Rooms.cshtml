@@ -1,0 +1,32 @@
+﻿@{
+    ViewData["Title"] = "Rooms";
+    var rooms = ViewData["Rooms"] as Dictionary<string, string>;
+}
+
+<style>
+    a {
+        color: inherit;
+    }
+</style>
+
+<h1 style="text-align:center">Välj rum</h1>
+
+<div class="container mt-5">
+    <div class="row">
+        @foreach (var room in rooms)
+        {
+            <div class="col-md-3 mb-4">
+                <a href="@Url.Action("Room", "Booking", new { roomKey = room.Key})">
+                    <div class="card" id="@($"{room.Key}")">
+                        <div class="card-body">
+                            <h5 class="card-title">@room.Value</h5>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        }
+    </div>
+</div>
+
+
+
